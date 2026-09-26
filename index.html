@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Iron Girder Walk VR - 高所足踏みフィットネス</title>
+  <!-- Tailwind CSS for modern HUD & 2D splash screens -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- A-Frame 1.5.0 WebXR Framework -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      background-color: #030712;
+    }
+    #splash-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      background: radial-gradient(circle at center, #111827 0%, #030712 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.6s ease;
+    }
+    .glow-border {
+      box-shadow: 0 0 25px rgba(245, 158, 11, 0.35);
+    }
+    /* Fall screen overlay */
+    #fall-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 999;
+      background: rgba(220, 38, 38, 0);
+      transition: background 0.2s ease-in;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="fall-overlay"></div>
+
+  <!-- Launch & Instruction Modal -->
+  <div id="splash-screen" class="p-6 text-center text-white">
+    <div class="max-w-md w-full bg-gray-900/90 border border-amber-500/40 rounded-2xl p-6 backdrop-blur-md glow-border shadow-2xl">
+      <div class="inline-flex items-center justify-center p-3 bg-amber-500/20 rounded-full mb-3 text-amber-400">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-black tracking-wider text-amber-400 uppercase mb-1">
+        Iron Girder Walk VR
+      </h1>
+      <p class="text-xs text-amber-200/70 tracking-widest font-mono mb-4">地上300m 高所足踏みフィットネス</p>
+
+      <div class="text-left bg-gray-800/80 rounded-xl p-4 text-xs sm:text-sm text-gray-300 space-y-2 mb-6 border border-gray-700">
+        <p class="flex items-center"><span class="text-amber-400 font-bold mr-2">①</span> <strong>その場で足踏み</strong> するとヘッドセットの揺れを検知して前進します。</p>
+        <p class="flex items-center"><span class="text-amber-400 font-bold mr-2">②</span> 鉄骨幅は <strong>わずか50cm</strong>。左右に足を踏み外すと地上300m下へ落下します。</p>
+        <p class="flex items-center"><span class="text-amber-400 font-bold mr-2">③</span> 40m先の対岸ビル屋上を目指してバランスを保ちながら歩き通してください。</p>
+        <p class="text-[11px] text-gray-400 mt-2 border-t border-gray-700 pt-2">※ PC環境では [W] または [Space] キー連打で足踏みシミュレート可能です。</p>
+      </div>
+
+      <button id="start-btn" class="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-gray-950 font-black rounded-xl text-base tracking-wider uppercase shadow-lg shadow-amber-500/30 active:scale-95 transition-all">
+        ゲームを開始 / 空間に入る
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+       PROCEDURAL CANVAS TEXTURES GENERATOR
+       Generates all textures dynamically inside single file (No external PNGs)
+       ========================================================================= */
+    const TextureGen = {
+      // 1. Steel Girder Caution Texture (Hazard stripes + rivets + metallic scratches)
+      createGirderTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Metal base
+        ctx.fillStyle = '#4a4d52';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Caution Stripes on outer borders
+        const stripeWidth = 40;
+        ctx.save();
+        ctx.fillStyle = '#f59e0b'; // Amber yellow
+        for (let x = -512; x < 1024; x += stripeWidth * 2) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + stripeWidth, 0);
+          ctx.lineTo(x + stripeWidth - 512, 512);
+          ctx.lineTo(x - 512, 512);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Dark walking lane in the center
+        ctx.fillStyle = '#2b2d30';
+        ctx.fillRect(80, 0, 352, 512);
+
+        // Tread pattern / diamond grid on walking path
+        ctx.strokeStyle = '#383b40';
+        ctx.lineWidth = 3;
+        for (let y = 0; y < 512; y += 32) {
+          ctx.beginPath();
+          ctx.moveTo(80, y);
+          ctx.lineTo(432, y);
+          ctx.stroke();
+        }
+
+        // Rivets along the edges
+        ctx.fillStyle = '#1c1e22';
+        ctx.strokeStyle = '#6b7280';
+        ctx.lineWidth = 2;
+        for (let y = 16; y < 512; y += 48) {
+          [40, 472].forEach(x => {
+            ctx.beginPath();
+            ctx.arc(x, y, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          });
+        }
+        return canvas.toDataURL();
+      },
+
+      // 2. Skyscraper Window Wall Texture (Procedural glowing windows)
+      createBuildingTexture(themeColor) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 256, 512);
+
+        const rows = 32;
+        const cols = 8;
+        const w = 256 / cols;
+        const h = 512 / rows;
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const rand = Math.random();
+            if (rand > 0.45) {
+              if (rand > 0.92) {
+                ctx.fillStyle = '#fef08a'; // Bright warm yellow
+              } else if (rand > 0.7) {
+                ctx.fillStyle = themeColor || '#38bdf8'; // Sky blue / cyan
+              } else {
+                ctx.fillStyle = '#1e293b'; // Unlit office
+              }
+              ctx.fillRect(c * w + 4, r * h + 3, w - 8, h - 6);
+            }
+          }
+        }
+        return canvas.toDataURL();
+      },
+
+      // 3. Concrete Roof Texture
+      createConcreteTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#374151';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Concrete panels
+        ctx.strokeStyle = '#1f2937';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(2, 2, 252, 252);
+        ctx.beginPath();
+        ctx.moveTo(128, 0); ctx.lineTo(128, 256);
+        ctx.moveTo(0, 128); ctx.lineTo(256, 128);
+        ctx.stroke();
+
+        // Noise grain
+        for (let i = 0; i < 800; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)';
+          ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+        }
+        return canvas.toDataURL();
+      },
+
+      // 4. Ground City Aerial Map Texture
+      createCityGroundTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#060a12';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Major Highway grid
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 6;
+        for (let i = 64; i < 512; i += 128) {
+          ctx.beginPath();
+          ctx.moveTo(0, i); ctx.lineTo(512, i);
+          ctx.moveTo(i, 0); ctx.lineTo(i, 512);
+          ctx.stroke();
+        }
+
+        // Secondary streets
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        for (let i = 32; i < 512; i += 64) {
+          ctx.beginPath();
+          ctx.moveTo(0, i); ctx.lineTo(512, i);
+          ctx.moveTo(i, 0); ctx.lineTo(i, 512);
+          ctx.stroke();
+        }
+
+        // City light clusters
+        for (let j = 0; j < 3000; j++) {
+          const lum = Math.random();
+          ctx.fillStyle = lum > 0.8 ? '#fef08a' : (lum > 0.5 ? '#38bdf8' : '#ef4444');
+          ctx.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 1.5);
+        }
+        return canvas.toDataURL();
+      }
+    };
+  </script>
+
+  <script>
+    /* =========================================================================
+       PROCEDURAL WEB AUDIO SYNTHESIZER
+       Generates wind howl, metal footsteps, falling whoosh, goal fanfares
+       ========================================================================= */
+    class ProceduralAudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.windGain = null;
+        this.windFilter = null;
+        this.isInitialized = false;
+      }
+
+      init() {
+        if (this.isInitialized) return;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioContextClass();
+        this.initHighAltitudeWind();
+        this.isInitialized = true;
+      }
+
+      // Continuous high-altitude wind howling sound
+      initHighAltitudeWind() {
+        const bufferSize = this.ctx.sampleRate * 2;
+        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        let b0 = 0, b1 = 0, b2 = 0;
+        // Pink noise filter approximation
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          b0 = 0.99886 * b0 + white * 0.0555179;
+          b1 = 0.99332 * b1 + white * 0.0750759;
+          b2 = 0.96900 * b2 + white * 0.1538520;
+          output[i] = (b0 + b1 + b2) * 0.4;
+        }
+
+        const whiteNoise = this.ctx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        whiteNoise.loop = true;
+
+        this.windFilter = this.ctx.createBiquadFilter();
+        this.windFilter.type = 'bandpass';
+        this.windFilter.frequency.setValueAtTime(320, this.ctx.currentTime);
+        this.windFilter.Q.setValueAtTime(2.2, this.ctx.currentTime);
+
+        this.windGain = this.ctx.createGain();
+        this.windGain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+
+        // LFO for slow wind gusts
+        const lfo = this.ctx.createOscillator();
+        lfo.frequency.setValueAtTime(0.25, this.ctx.currentTime);
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.setValueAtTime(140, this.ctx.currentTime);
+        lfo.connect(lfoGain);
+        lfoGain.connect(this.windFilter.frequency);
+        lfo.start();
+
+        whiteNoise.connect(this.windFilter);
+        this.windFilter.connect(this.windGain);
+        this.windGain.connect(this.ctx.destination);
+        whiteNoise.start();
+      }
+
+      // Footstep sound: metallic thud on iron beam
+      playFootstep() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        
+        // Metallic ping (high triangle osc)
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(840, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+        
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.13);
+
+        // Low iron thud
+        const thudOsc = this.ctx.createOscillator();
+        const thudGain = this.ctx.createGain();
+        thudOsc.type = 'sine';
+        thudOsc.frequency.setValueAtTime(140, now);
+        thudOsc.frequency.exponentialRampToValueAtTime(45, now + 0.15);
+
+        thudGain.gain.setValueAtTime(0.4, now);
+        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        thudOsc.connect(thudGain);
+        thudGain.connect(this.ctx.destination);
+        thudOsc.start(now);
+        thudOsc.stop(now + 0.16);
+      }
+
+      // Fall sound: Sudden accelerating whoosh and screaming pitch
+      playFallingSound() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        if (this.windFilter && this.windGain) {
+          this.windFilter.frequency.cancelScheduledValues(now);
+          this.windFilter.frequency.exponentialRampToValueAtTime(2500, now + 2.0);
+          this.windGain.gain.cancelScheduledValues(now);
+          this.windGain.gain.linearRampToValueAtTime(0.85, now + 1.5);
+        }
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(420, now);
+        osc.frequency.linearRampToValueAtTime(120, now + 2.2);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 2.2);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 2.3);
+      }
+
+      // Reset wind volume after respawn
+      resetWind() {
+        if (!this.ctx || !this.windGain) return;
+        const now = this.ctx.currentTime;
+        this.windGain.gain.cancelScheduledValues(now);
+        this.windGain.gain.linearRampToValueAtTime(0.2, now + 0.5);
+        this.windFilter.frequency.cancelScheduledValues(now);
+        this.windFilter.frequency.setValueAtTime(320, now + 0.5);
+      }
+
+      // Victory chime
+      playGoalCelebration() {
+        if (!this.ctx) return;
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+          const now = this.ctx.currentTime + idx * 0.12;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now);
+
+          gain.gain.setValueAtTime(0.35, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.85);
+        });
+      }
+    }
+
+    const soundEngine = new ProceduralAudioEngine();
+  </script>
+
+  <script>
+    /* =========================================================================
+       A-FRAME COMPONENT: walk-in-place-controller
+       Detects vertical head bobbing (Y-axis oscillation) during in-place stepping
+       and propels the user forward along the facing direction.
+       ========================================================================= */
+    AFRAME.registerComponent('walk-in-place-controller', {
+      schema: {
+        stepThreshold: { type: 'number', default: 0.024 }, // Min peak-to-trough Y delta (m)
+        maxStepInterval: { type: 'number', default: 1100 }, // Max ms between steps
+        moveSpeed: { type: 'number', default: 0.85 },       // Forward impulse multiplier
+        damping: { type: 'number', default: 0.92 }          // Friction per frame
+      },
+
+      init: function () {
+        this.camera = this.el.sceneEl.camera;
+        this.rig = this.el; // Player Rig
+        
+        // Detection states
+        this.lastY = 1.6;
+        this.smoothedY = 1.6;
+        this.direction = 0; // 1 = going up, -1 = going down
+        this.minPeakY = 1.6;
+        this.maxPeakY = 1.6;
+        this.lastStepTime = performance.now();
+        this.stepTimes = [];
+
+        // Locomotion physics
+        this.velocity = 0;
+        this.totalSteps = 0;
+        this.totalDistance = 0;
+        this.lastZ = this.rig.object3D.position.z;
+
+        // PC Keyboard debug support
+        this.keys = { forward: false, stepTriggered: false };
+        window.addEventListener('keydown', (e) => {
+          if (e.code === 'KeyW' || e.code === 'Space' || e.code === 'ArrowUp') {
+            this.triggerStep();
+          }
+        });
+      },
+
+      triggerStep: function () {
+        const now = performance.now();
+        const delta = now - this.lastStepTime;
+        if (delta < 210) return; // Debounce rapid triggers
+
+        this.totalSteps++;
+        this.lastStepTime = now;
+        this.stepTimes.push(now);
+        if (this.stepTimes.length > 5) this.stepTimes.shift();
+
+        // Add forward momentum
+        this.velocity = Math.min(this.velocity + this.data.moveSpeed * 0.45, 2.2);
+
+        // Sound effect
+        soundEngine.playFootstep();
+
+        // Broadcast step event for HUD
+        this.el.emit('step-detected', {
+          steps: this.totalSteps,
+          spm: this.calculateSPM()
+        });
+      },
+
+      calculateSPM: function () {
+        if (this.stepTimes.length < 2) return 0;
+        const intervals = [];
+        for (let i = 1; i < this.stepTimes.length; i++) {
+          intervals.push(this.stepTimes[i] - this.stepTimes[i - 1]);
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        if (avgInterval === 0 || avgInterval > 1600) return 0;
+        return Math.round(60000 / avgInterval);
+      },
+
+      tick: function (time, delta) {
+        if (!this.camera) return;
+        const dt = Math.min(delta / 1000, 0.1);
+
+        // Get world camera height
+        const currentCamY = this.camera.el.object3D.position.y;
+        
+        // Low-pass filter to eliminate sensor micro-tremors
+        this.smoothedY = this.smoothedY * 0.75 + currentCamY * 0.25;
+        const deltaY = this.smoothedY - this.lastY;
+
+        // Peak / Valley tracking state machine
+        if (deltaY > 0.002) {
+          if (this.direction !== 1) {
+            // Started moving UP from a valley
+            const valleyDepth = this.maxPeakY - this.minPeakY;
+            if (valleyDepth >= this.data.stepThreshold) {
+              this.triggerStep();
+            }
+            this.minPeakY = this.smoothedY;
+            this.direction = 1;
+          }
+          if (this.smoothedY > this.maxPeakY) this.maxPeakY = this.smoothedY;
+        } else if (deltaY < -0.002) {
+          if (this.direction !== -1) {
+            // Started moving DOWN from a peak
+            this.maxPeakY = this.smoothedY;
+            this.direction = -1;
+          }
+          if (this.smoothedY < this.minPeakY) this.minPeakY = this.smoothedY;
+        }
+
+        this.lastY = this.smoothedY;
+
+        // Step timeout: reset cadence if standing still
+        if (time - this.lastStepTime > this.data.maxStepInterval) {
+          this.stepTimes = [];
+        }
+
+        // Apply velocity & forward locomotion
+        if (this.velocity > 0.005) {
+          // Get forward heading from camera yaw
+          const camRot = this.camera.el.object3D.rotation;
+          const yaw = camRot.y;
+
+          // Compute forward vector
+          const dx = -Math.sin(yaw) * this.velocity * dt;
+          const dz = -Math.cos(yaw) * this.velocity * dt;
+
+          this.rig.object3D.position.x += dx;
+          this.rig.object3D.position.z += dz;
+
+          // Friction damping
+          this.velocity *= Math.pow(this.data.damping, dt * 60);
+        } else {
+          this.velocity = 0;
+        }
+      }
+    });
+  </script>
+
+  <script>
+    /* =========================================================================
+       A-FRAME COMPONENT: girder-game-manager
+       Manages player stages: Start Roof, Girder Traverse, Fall, and Goal Reach.
+       Girder coordinates: X = 0 (tolerance ±0.25m), Z goes from 1.0 to -39.0m
+       ========================================================================= */
+    AFRAME.registerComponent('girder-game-manager', {
+      init: function () {
+        this.rig = document.querySelector('#rig');
+        this.camera = document.querySelector('#head-camera');
+        this.hud = document.querySelector('#fitness-hud');
+        this.fallOverlay = document.getElementById('fall-overlay');
+
+        this.state = 'START_ROOF'; // 'START_ROOF', 'ON_GIRDER', 'FALLING', 'GOAL'
+        this.fallVelocityY = 0;
+        this.gravity = -26; // m/s² for dramatic rapid freefall
+        this.startTime = performance.now();
+        this.goalReachedTime = 0;
+
+        // Girder dimensions
+        this.girderStartPosZ = 1.0;
+        this.girderEndPosZ = -39.0;
+        this.girderHalfWidth = 0.25; // 50cm total width -> ±25cm from center
+
+        // Distance tracker
+        this.traveledGirderDistance = 0;
+      },
+
+      tick: function (time, delta) {
+        const dt = Math.min(delta / 1000, 0.1);
+        const pos = this.rig.object3D.position;
+
+        // 1. STATE: FALLING
+        if (this.state === 'FALLING') {
+          this.fallVelocityY += this.gravity * dt;
+          pos.y += this.fallVelocityY * dt;
+
+          // Camera spin/shake effect during fall
+          this.camera.object3D.rotation.z += 1.8 * dt;
+          this.camera.object3D.rotation.x += 0.9 * dt;
+
+          // Fade to deep red then respawn
+          if (pos.y < -120) {
+            this.respawnPlayer();
+          }
+          return;
+        }
+
+        // Calculate progress along girder
+        if (pos.z <= this.girderStartPosZ && pos.z >= this.girderEndPosZ) {
+          this.state = 'ON_GIRDER';
+          this.traveledGirderDistance = Math.min(40.0, Math.max(0, this.girderStartPosZ - pos.z));
+        } else if (pos.z > this.girderStartPosZ) {
+          this.state = 'START_ROOF';
+          this.traveledGirderDistance = 0;
+        } else if (pos.z < this.girderEndPosZ) {
+          if (this.state !== 'GOAL') {
+            this.onGoalReached();
+          }
+          this.state = 'GOAL';
+          this.traveledGirderDistance = 40.0;
+        }
+
+        // 2. CHECK FALL BOUNDARIES: Stepping off the 50cm steel beam
+        if (this.state === 'ON_GIRDER') {
+          if (Math.abs(pos.x) > this.girderHalfWidth) {
+            this.triggerFall();
+          }
+        } else if (this.state === 'START_ROOF') {
+          // Fall off rooftop perimeter
+          if (Math.abs(pos.x) > 4.2 || pos.z > 7.5) {
+            this.triggerFall();
+          }
+        } else if (this.state === 'GOAL') {
+          // Fall off goal rooftop perimeter
+          if (Math.abs(pos.x) > 4.2 || pos.z < -47.0) {
+            this.triggerFall();
+          }
+        }
+      },
+
+      triggerFall: function () {
+        if (this.state === 'FALLING') return;
+        this.state = 'FALLING';
+        this.fallVelocityY = -2.0;
+        soundEngine.playFallingSound();
+
+        // 2D Red flash
+        if (this.fallOverlay) {
+          this.fallOverlay.style.background = 'rgba(220, 38, 38, 0.75)';
+        }
+
+        // Notify HUD
+        this.el.emit('player-fall');
+      },
+
+      respawnPlayer: function () {
+        this.state = 'START_ROOF';
+        this.fallVelocityY = 0;
+        
+        // Reset player coordinates back to safe starting rooftop
+        this.rig.object3D.position.set(0, 0, 5.0);
+        this.camera.object3D.rotation.set(0, 0, 0);
+
+        // Reset fall UI and audio
+        if (this.fallOverlay) {
+          this.fallOverlay.style.background = 'rgba(220, 38, 38, 0)';
+        }
+        soundEngine.resetWind();
+
+        this.el.emit('player-respawn');
+      },
+
+      onGoalReached: function () {
+        this.goalReachedTime = performance.now();
+        soundEngine.playGoalCelebration();
+        this.el.emit('goal-achieved', {
+          timeSeconds: Math.round((this.goalReachedTime - this.startTime) / 1000)
+        });
+      }
+    });
+  </script>
+
+  <script>
+    /* =========================================================================
+       A-FRAME COMPONENT: procedural-city
+       Spawns high-rise skyscrapers, roof props, and twinkling city grid below
+       ========================================================================= */
+    AFRAME.registerComponent('procedural-city', {
+      init: function () {
+        const scene = this.el;
+
+        // Textures
+        const bldgTex1 = TextureGen.createBuildingTexture('#38bdf8');
+        const bldgTex2 = TextureGen.createBuildingTexture('#f59e0b');
+        const roofTex = TextureGen.createConcreteTexture();
+
+        // Spawn surrounding tall skyscrapers
+        const buildingCount = 36;
+        for (let i = 0; i < buildingCount; i++) {
+          const angle = (i / buildingCount) * Math.PI * 2 + (Math.random() * 0.2);
+          const dist = 35 + Math.random() * 70;
+          const x = Math.cos(angle) * dist;
+          const z = Math.sin(angle) * dist - 20; // Centered near girder midpoint
+
+          // Exclude center path where the bridge and platforms are
+          if (Math.abs(x) < 9 && z > -50 && z < 10) continue;
+
+          const height = 180 + Math.random() * 150;
+          const width = 18 + Math.random() * 22;
+          const depth = 18 + Math.random() * 22;
+
+          const bldg = document.createElement('a-box');
+          bldg.setAttribute('position', `${x} ${height / 2 - 280} ${z}`);
+          bldg.setAttribute('width', width);
+          bldg.setAttribute('depth', depth);
+          bldg.setAttribute('height', height);
+          bldg.setAttribute('material', {
+            src: (i % 2 === 0) ? bldgTex1 : bldgTex2,
+            repeat: `${Math.round(width / 6)} ${Math.round(height / 10)}`,
+            roughness: 0.7,
+            metalness: 0.3
+          });
+          scene.appendChild(bldg);
+
+          // Rooftop HVAC units / Antennas on taller buildings
+          if (Math.random() > 0.4) {
+            const hvac = document.createElement('a-box');
+            hvac.setAttribute('position', `${x} ${height - 280 + 2} ${z}`);
+            hvac.setAttribute('width', width * 0.3);
+            hvac.setAttribute('depth', depth * 0.3);
+            hvac.setAttribute('height', 3.5);
+            hvac.setAttribute('material', `src: ${roofTex}; repeat: 2 2; color: #475569;`);
+            scene.appendChild(hvac);
+          }
+        }
+      }
+    });
+  </script>
+
+  <script>
+    /* =========================================================================
+       A-FRAME COMPONENT: vr-fitness-hud
+       Paints an in-VR high-tech dashboard displaying Steps, Distance, kCal, SPM
+       ========================================================================= */
+    AFRAME.registerComponent('vr-fitness-hud', {
+      init: function () {
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = 512;
+        this.canvas.height = 256;
+        this.ctx = this.canvas.getContext('2d');
+
+        this.steps = 0;
+        this.spm = 0;
+        this.distance = 0;
+        this.calories = 0;
+        this.statusText = 'KEEP BALANCE & WALK';
+        this.statusColor = '#f59e0b';
+        this.isGoal = false;
+
+        // Apply dynamic canvas texture to HUD plane
+        this.texture = new THREE.CanvasTexture(this.canvas);
+        const mesh = this.el.getObject3D('mesh');
+        if (mesh) {
+          mesh.material.map = this.texture;
+          mesh.material.transparent = true;
+          mesh.material.opacity = 0.95;
+        }
+
+        // Listen for game events
+        const rig = document.querySelector('#rig');
+        rig.addEventListener('step-detected', (e) => {
+          this.steps = e.detail.steps;
+          this.spm = e.detail.spm;
+          // Approx. 0.04 kcal per step
+          this.calories = (this.steps * 0.042).toFixed(1);
+          this.updateDisplay();
+        });
+
+        const scene = this.el.sceneEl;
+        scene.addEventListener('player-fall', () => {
+          this.statusText = '⚠ MISSTEP! FALLING!';
+          this.statusColor = '#ef4444';
+          this.updateDisplay();
+        });
+
+        scene.addEventListener('player-respawn', () => {
+          this.statusText = 'RESPAWNED - BALANCED';
+          this.statusColor = '#f59e0b';
+          this.updateDisplay();
+        });
+
+        scene.addEventListener('goal-achieved', (e) => {
+          this.isGoal = true;
+          this.statusText = '★ GOAL COMPLETED! ★';
+          this.statusColor = '#10b981';
+          this.updateDisplay();
+        });
+
+        this.updateDisplay();
+      },
+
+      tick: function () {
+        const rig = document.querySelector('#rig');
+        const pos = rig.object3D.position;
+        // Girder extends from Z=1 to Z=-39
+        const rawDist = Math.max(0, Math.min(40, 1.0 - pos.z));
+        if (Math.abs(this.distance - rawDist) > 0.05) {
+          this.distance = rawDist;
+          this.updateDisplay();
+        }
+      },
+
+      updateDisplay: function () {
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, 512, 256);
+
+        // Futuristic Glassmorphism Card
+        ctx.fillStyle = 'rgba(10, 15, 29, 0.92)';
+        ctx.strokeStyle = this.statusColor;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.roundRect(8, 8, 496, 240, 20);
+        ctx.fill();
+        ctx.stroke();
+
+        // Header Bar
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fillRect(8, 8, 496, 42);
+
+        ctx.font = 'bold 20px monospace';
+        ctx.fillStyle = this.statusColor;
+        ctx.fillText(this.statusText, 24, 36);
+
+        // Status indicator circle
+        ctx.beginPath();
+        ctx.arc(470, 28, 8, 0, Math.PI * 2);
+        ctx.fillStyle = this.statusColor;
+        ctx.fill();
+
+        // 4-Column Metric Grid
+        const metrics = [
+          { label: 'STEPS', val: this.steps.toString(), unit: '歩' },
+          { label: 'PROGRESS', val: this.distance.toFixed(1), unit: '/ 40m' },
+          { label: 'CALORIES', val: this.calories.toString(), unit: 'kcal' },
+          { label: 'CADENCE', val: this.spm.toString(), unit: 'SPM' }
+        ];
+
+        metrics.forEach((m, idx) => {
+          const x = 24 + idx * 118;
+          ctx.font = '12px sans-serif';
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(m.label, x, 85);
+
+          ctx.font = 'bold 30px monospace';
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillText(m.val, x, 126);
+
+          ctx.font = '11px sans-serif';
+          ctx.fillStyle = '#64748b';
+          ctx.fillText(m.unit, x, 146);
+        });
+
+        // Girder Progress Bar
+        const barX = 24;
+        const barY = 175;
+        const barW = 464;
+        const barH = 16;
+        const pct = Math.min(1.0, this.distance / 40.0);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, barW, barH, 8);
+        ctx.fill();
+
+        if (pct > 0) {
+          ctx.fillStyle = '#f59e0b';
+          ctx.beginPath();
+          ctx.roundRect(barX, barY, Math.max(16, barW * pct), barH, 8);
+          ctx.fill();
+        }
+
+        // Footer Guidance
+        ctx.font = '13px sans-serif';
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText('⚡ 足踏み運動で前進 | 鉄骨幅50cm | 左右落下注意', 24, 222);
+
+        if (this.texture) this.texture.needsUpdate = true;
+      }
+    });
+  </script>
+
+  <!-- A-Frame Scene -->
+  <a-scene
+    renderer="antialias: true; colorManagement: true; foveationLevel: 2;"
+    fog="type: exponential; color: #0b1120; density: 0.0035;"
+    procedural-city
+    girder-game-manager
+    vr-mode-ui="enabled: true">
+
+    <a-assets>
+      <!-- Inject dynamically generated canvas textures into assets -->
+      <canvas id="canvas-girder"></canvas>
+      <canvas id="canvas-roof"></canvas>
+      <canvas id="canvas-ground"></canvas>
+    </a-assets>
+
+    <!-- Environmental Illumination -->
+    <a-entity light="type: ambient; color: #64748b; intensity: 0.65;"></a-entity>
+    <a-entity light="type: directional; color: #fef08a; intensity: 1.1; castShadow: false;" position="15 35 20"></a-entity>
+    <a-entity light="type: point; color: #38bdf8; intensity: 0.8; distance: 50;" position="0 5 -20"></a-entity>
+
+    <!-- Deep Night Sky -->
+    <a-sky color="#030712"></a-sky>
+
+    <!-- Distant City Ground Plane (280m below the player) -->
+    <a-plane id="ground-city"
+      position="0 -280 0"
+      rotation="-90 0 0"
+      width="1200"
+      height="1200"
+      material="roughness: 0.9; metalness: 0.1">
+    </a-plane>
+
+    <!-- Wind Particles floating along the girder -->
+    <a-entity id="wind-particles">
+      <!-- High-altitude wind gust dust lines -->
+      <a-box position="1 2 -10" width="0.02" height="0.02" depth="6" material="color: #94a3b8; opacity: 0.25; transparent: true"></a-box>
+      <a-box position="-2 3 -25" width="0.02" height="0.02" depth="8" material="color: #94a3b8; opacity: 0.2; transparent: true"></a-box>
+      <a-box position="1.5 1 -32" width="0.02" height="0.02" depth="5" material="color: #94a3b8; opacity: 0.3; transparent: true"></a-box>
+    </a-entity>
+
+    <!-- 1. START ROOFTOP PLATFORM (Building A, Ground Zero Y=0) -->
+    <a-entity id="start-platform" position="0 0 5">
+      <!-- Main Rooftop Floor -->
+      <a-box id="start-roof-floor" position="0 -0.5 0" width="8" height="1" depth="8" material="color: #1e293b; roughness: 0.8;"></a-box>
+      <!-- Skyscraper body extending 280m straight down -->
+      <a-box position="0 -141 0" width="8" height="280" depth="8" material="color: #0f172a; roughness: 0.9;"></a-box>
+      <!-- Safety Railings on back/sides only (Front opens to the girder) -->
+      <a-box position="-4 0.6 0" width="0.1" height="1.2" depth="8" material="color: #eab308; roughness: 0.4;"></a-box>
+      <a-box position="4 0.6 0" width="0.1" height="1.2" depth="8" material="color: #eab308; roughness: 0.4;"></a-box>
+      <a-box position="0 0.6 4" width="8" height="1.2" depth="0.1" material="color: #eab308; roughness: 0.4;"></a-box>
+      <!-- Warning Gate Pillars marking beam start -->
+      <a-cylinder position="-0.6 1.0 -3.9" radius="0.08" height="2" material="color: #f59e0b;"></a-cylinder>
+      <a-cylinder position="0.6 1.0 -3.9" radius="0.08" height="2" material="color: #f59e0b;"></a-cylinder>
+      <a-box position="0 2.0 -3.9" width="1.4" height="0.25" depth="0.1" material="color: #f59e0b;"></a-box>
+      <a-text value="START 40M GIRDER" position="0 2.0 -3.83" align="center" width="2.4" color="#030712" font="monoid"></a-text>
+    </a-entity>
+
+    <!-- 2. THE 40m STEEL GIRDER (H-Beam: 0.5m Wide, 40m Long) -->
+    <!-- Positioned from Z = 1.0 to Z = -39.0. Center is Z = -19.0 -->
+    <a-entity id="iron-girder-assembly" position="0 0 -19">
+      <!-- Top Walking Flange: 0.5m width, 40m length, thickness 0.05m -->
+      <a-box id="girder-top"
+        position="0 -0.025 0"
+        width="0.5"
+        height="0.05"
+        depth="40"
+        material="roughness: 0.6; metalness: 0.7;">
+      </a-box>
+
+      <!-- Center Vertical Web Plate: 0.06m thick, 0.75m high, 40m length -->
+      <a-box id="girder-web"
+        position="0 -0.425 0"
+        width="0.06"
+        height="0.75"
+        depth="40"
+        material="color: #334155; roughness: 0.8; metalness: 0.8;">
+      </a-box>
+
+      <!-- Bottom Flange: 0.5m width, 40m length -->
+      <a-box id="girder-bottom"
+        position="0 -0.825 0"
+        width="0.5"
+        height="0.05"
+        depth="40"
+        material="color: #1e293b; roughness: 0.8; metalness: 0.8;">
+      </a-box>
+
+      <!-- Structural Cross-Braces / Stiffener Ribs beneath girder every 4m -->
+      <a-entity id="stiffeners">
+        <a-box position="0 -0.425 -16" width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 -12" width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 -8"  width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 -4"  width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 0"   width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 4"   width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 8"   width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 12"  width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+        <a-box position="0 -0.425 16"  width="0.48" height="0.75" depth="0.04" material="color: #0f172a;"></a-box>
+      </a-entity>
+    </a-entity>
+
+    <!-- 3. GOAL ROOFTOP PLATFORM (Building B, Z = -43m) -->
+    <a-entity id="goal-platform" position="0 0 -43">
+      <!-- Roof floor -->
+      <a-box position="0 -0.5 0" width="8" height="1" depth="8" material="color: #1e293b; roughness: 0.8;"></a-box>
+      <!-- Skyscraper body extending 280m straight down -->
+      <a-box position="0 -141 0" width="8" height="280" depth="8" material="color: #0f172a; roughness: 0.9;"></a-box>
+      <!-- Enclosing railings -->
+      <a-box position="-4 0.6 0" width="0.1" height="1.2" depth="8" material="color: #10b981; roughness: 0.4;"></a-box>
+      <a-box position="4 0.6 0" width="0.1" height="1.2" depth="8" material="color: #10b981; roughness: 0.4;"></a-box>
+      <a-box position="0 0.6 -4" width="8" height="1.2" depth="0.1" material="color: #10b981; roughness: 0.4;"></a-box>
+      
+      <!-- Goal Arch with Neon Lights -->
+      <a-cylinder position="-1.2 1.4 3.9" radius="0.1" height="2.8" material="color: #10b981;"></a-cylinder>
+      <a-cylinder position="1.2 1.4 3.9" radius="0.1" height="2.8" material="color: #10b981;"></a-cylinder>
+      <a-box position="0 2.8 3.9" width="2.6" height="0.4" depth="0.2" material="color: #10b981;"></a-box>
+      <a-text value="★ FINISH GOAL ★" position="0 2.8 4.02" align="center" width="3.5" color="#022c22" font="monoid"></a-text>
+      <!-- Beacon light pointing up to the night sky -->
+      <a-cylinder position="0 15 0" radius="0.2" height="30" material="color: #10b981; opacity: 0.35; transparent: true"></a-cylinder>
+    </a-entity>
+
+    <!-- Player Rig: Locomotion & Headset Tracking -->
+    <a-entity id="rig" position="0 0 5" walk-in-place-controller>
+      
+      <!-- Head Camera -->
+      <a-camera id="head-camera" position="0 1.65 0" look-controls="pointerLockEnabled: false">
+        
+        <!-- Attached In-VR HUD (Fixed in lower visual field) -->
+        <a-entity id="fitness-hud-container" position="0 -0.32 -0.85" rotation="-18 0 0">
+          <a-plane id="fitness-hud" width="0.8" height="0.4" vr-fitness-hud material="shader: flat; transparent: true;"></a-plane>
+        </a-entity>
+
+        <!-- Subtle footstep alignment guide / crosshair in center gaze -->
+        <a-ring position="0 0 -1" radius-inner="0.003" radius-outer="0.006" material="color: #f59e0b; opacity: 0.6; shader: flat;"></a-ring>
+      </a-camera>
+
+      <!-- VR Controller support (For Quest 6DoF hand tracking triggers) -->
+      <a-entity id="leftHand" laser-controls="hand: left"></a-entity>
+      <a-entity id="rightHand" laser-controls="hand: right"></a-entity>
+    </a-entity>
+
+  </a-scene>
+
+  <script>
+    /* =========================================================================
+       INITIALIZATION & INTERACTION HOOKS
+       ========================================================================= */
+    window.addEventListener('DOMContentLoaded', () => {
+      const startBtn = document.getElementById('start-btn');
+      const splashScreen = document.getElementById('splash-screen');
+
+      // Bind canvas textures to A-Frame 3D meshes once scene loads
+      const sceneEl = document.querySelector('a-scene');
+      sceneEl.addEventListener('loaded', () => {
+        // Apply girder top caution texture
+        const girderTopEl = document.querySelector('#girder-top');
+        if (girderTopEl) {
+          const girderDataUrl = TextureGen.createGirderTexture();
+          girderTopEl.setAttribute('material', {
+            src: girderDataUrl,
+            repeat: '1 40',
+            roughness: 0.5,
+            metalness: 0.6
+          });
+        }
+
+        // Apply ground city map texture
+        const groundCityEl = document.querySelector('#ground-city');
+        if (groundCityEl) {
+          const groundDataUrl = TextureGen.createCityGroundTexture();
+          groundCityEl.setAttribute('material', {
+            src: groundDataUrl,
+            repeat: '12 12',
+            roughness: 0.95
+          });
+        }
+
+        // Apply concrete rooftop texture
+        const roofDataUrl = TextureGen.createConcreteTexture();
+        const startRoofFloor = document.querySelector('#start-roof-floor');
+        if (startRoofFloor) {
+          startRoofFloor.setAttribute('material', {
+            src: roofDataUrl,
+            repeat: '4 4',
+            roughness: 0.8
+          });
+        }
+      });
+
+      // Start Experience button handler
+      startBtn.addEventListener('click', async () => {
+        // Initialize Web Audio synthesizer on user gesture
+        soundEngine.init();
+
+        // Dismiss splash screen smoothly
+        splashScreen.style.opacity = '0';
+        setTimeout(() => {
+          splashScreen.style.display = 'none';
+        }, 600);
+
+        // Attempt WebXR immersion enter on Quest Browser
+        if (sceneEl.enterVR && navigator.xr) {
+          try {
+            const isSupported = await navigator.xr.isSessionSupported('immersive-vr');
+            if (isSupported) {
+              sceneEl.enterVR();
+            }
+          } catch (e) {
+            console.log('WebXR Session auto-request deferred.', e);
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
