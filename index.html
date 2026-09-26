@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Iron Girder Walk VR - Meta Quest Edition</title>
-  <!-- A-Frame 1.6.0 (WebXR安定動作版) -->
+  <title>Iron Girder Walk VR - Meta Quest Fixed</title>
+  <!-- A-Frame 1.6.0 -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 
   <style>
@@ -12,45 +12,31 @@
       margin: 0;
       overflow: hidden;
       background-color: #020408;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    /* VRモード突入前の2Dブラウザ案内バナー */
     #vr-guide {
       position: absolute;
       top: 16px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(10, 20, 35, 0.92);
+      background: rgba(8, 16, 30, 0.95);
       border: 2px solid #00d2ff;
       border-radius: 12px;
-      padding: 16px 28px;
+      padding: 14px 24px;
       color: #ffffff;
       text-align: center;
       z-index: 9999;
-      box-shadow: 0 0 25px rgba(0, 210, 255, 0.4);
-      max-width: 520px;
+      box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
       pointer-events: none;
     }
-    #vr-guide h2 {
-      margin: 0 0 8px 0;
-      font-size: 18px;
-      color: #00f0ff;
-    }
-    #vr-guide p {
-      margin: 4px 0;
-      font-size: 14px;
-      line-height: 1.5;
-      color: #e0e8f0;
-    }
-    #vr-guide .highlight {
-      color: #ffe600;
-      font-weight: bold;
-    }
+    #vr-guide h2 { margin: 0 0 6px 0; font-size: 17px; color: #00f0ff; }
+    #vr-guide p { margin: 2px 0; font-size: 13px; color: #e0e8f0; }
+    #vr-guide .em { color: #ffe600; font-weight: bold; }
   </style>
 
   <script>
     // =========================================================================
-    // Web Audio API による完全自己完結サウンドシステム
+    // Web Audio サウンドエンジン（足音・風・落下）
     // =========================================================================
     class SoundEngine {
       constructor() {
@@ -59,139 +45,128 @@
       }
       init() {
         if (this.isReady) return;
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new AudioContext();
-        if (this.ctx.state === 'suspended') {
-          this.ctx.resume();
-        }
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioCtx();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
         this.isReady = true;
-        this.startWindAmbience();
+        this.startWind();
       }
-      // 高所の風切り環境音
-      startWindAmbience() {
+      startWind() {
         if (!this.ctx) return;
         const bufferSize = this.ctx.sampleRate * 2;
-        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          output[i] = Math.random() * 2 - 1;
-        }
-        const whiteNoise = this.ctx.createBufferSource();
-        whiteNoise.buffer = noiseBuffer;
-        whiteNoise.loop = true;
+        const noise = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const out = noise.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) out[i] = Math.random() * 2 - 1;
+
+        const white = this.ctx.createBufferSource();
+        white.buffer = noise;
+        white.loop = true;
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'bandpass';
-        filter.frequency.value = 380;
-        filter.Q.value = 1.8;
+        filter.frequency.value = 350;
+        filter.Q.value = 2.0;
 
-        const gainNode = this.ctx.createGain();
-        gainNode.gain.value = 0.08;
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0.07;
 
-        whiteNoise.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(this.ctx.destination);
-        whiteNoise.start(0);
+        white.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        white.start(0);
       }
-      // 鉄骨を踏みしめる金属足音
       playStep() {
         if (!this.ctx) return;
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(440, now);
-        osc.frequency.exponentialRampToValueAtTime(110, now + 0.09);
-        gain.gain.setValueAtTime(0.18, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+        osc.frequency.setValueAtTime(380, now);
+        osc.frequency.exponentialRampToValueAtTime(90, now + 0.08);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.1);
+        osc.stop(now + 0.09);
       }
-      // 落下時の風切り急降下音
       playFall() {
         if (!this.ctx) return;
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(300, now);
-        osc.frequency.exponentialRampToValueAtTime(40, now + 1.2);
-        gain.gain.setValueAtTime(0.25, now);
+        osc.frequency.setValueAtTime(260, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 1.2);
+        gain.gain.setValueAtTime(0.3, now);
         gain.gain.linearRampToValueAtTime(0.01, now + 1.2);
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
         osc.stop(now + 1.2);
       }
-      // ゴールファンファーレ
       playGoal() {
         if (!this.ctx) return;
-        [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+        [523, 659, 784, 1046].forEach((f, i) => {
           const now = this.ctx.currentTime + i * 0.12;
           const osc = this.ctx.createOscillator();
           const gain = this.ctx.createGain();
           osc.type = 'sine';
-          osc.frequency.value = freq;
+          osc.frequency.value = f;
           gain.gain.setValueAtTime(0.2, now);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
           osc.connect(gain);
           gain.connect(this.ctx.destination);
           osc.start(now);
-          osc.stop(now + 0.7);
+          osc.stop(now + 0.6);
         });
       }
     }
 
     // =========================================================================
-    // 足踏み（WIP）＆ コントローラースティック 移動制御コンポーネント
+    // 改良型 足踏み（WIP）＆ スティック推進コンポーネント
     // =========================================================================
     AFRAME.registerComponent('girder-locomotion', {
       schema: {
-        beamWidth: { default: 0.5 },    // 鉄骨幅 50cm (-0.25m 〜 +0.25m)
-        beamLength: { default: 40.0 },  // 鉄骨長 40m
-        fallMargin: { default: 0.28 },  // 踏み外し判定（左右±28cmで落下）
-        walkSpeed: { default: 1.8 }     // 前進基準速度 (m/s)
+        beamWidth: { default: 0.5 },
+        beamLength: { default: 40.0 },
+        fallMargin: { default: 0.28 },
+        stepThreshold: { default: 0.006 }, // 閾値を 6mm（0.6cm）に高感度化
+        maxSpeed: { default: 1.6 }
       },
 
       init: function () {
-        this.rig = this.el; // #rig エンティティ
+        this.rig = this.el;
         this.camera = this.el.querySelector('#head');
         this.sound = new SoundEngine();
 
-        // 足踏み検知用バッファ（直近350msの波形解析）
-        this.yHistory = [];
-        this.windowMs = 350;
-        this.minStepThreshold = 0.018; // 1.8cm以上の上下動で検知
+        // 運動量・慣性シミュレータ
+        this.currentSpeed = 0.0;     // 現在の前進速度 (m/s)
+        this.currentStrafe = 0.0;    // 左右移動速度 (m/s)
 
-        // 状態フラグ
+        // 頭部Y軸の波形追跡バッファ
+        this.yHistory = [];
+        this.windowMs = 300;         // 直近0.3秒の変動を見る
+        this.lastStepTime = 0;
         this.steps = 0;
         this.calories = 0.0;
-        this.lastStepTime = 0;
+
         this.isFalling = false;
         this.fallSpeed = 0;
         this.goalReached = false;
 
-        // コントローラー入力
-        this.stickX = 0;
-        this.stickY = 0;
-
-        // キーボード入力（PCテスト兼用）
+        // キーボード入力（PCテスト用）
         this.keys = {};
         window.addEventListener('keydown', (e) => { this.keys[e.code] = true; });
         window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
 
-        // HUDエレメントの参照
+        // HUDエレメント
         this.hudDist = document.querySelector('#hud-distance');
         this.hudSteps = document.querySelector('#hud-steps');
         this.hudKcal = document.querySelector('#hud-kcal');
         this.hudGauge = document.querySelector('#hud-gauge');
-        this.hudStatus = document.querySelector('#hud-status');
         this.hudAmp = document.querySelector('#hud-amp');
-
-        // VRコントローラーのイベント登録
-        this.setupControllerListeners();
+        this.hudStatus = document.querySelector('#hud-status');
 
         // VRモード突入時のサウンド初期化
         this.el.sceneEl.addEventListener('enter-vr', () => {
@@ -199,31 +174,33 @@
           const guide = document.getElementById('vr-guide');
           if (guide) guide.style.display = 'none';
         });
-
-        // 画面タップでもサウンドをアンロック
         window.addEventListener('click', () => { this.sound.init(); }, { once: true });
       },
 
-      setupControllerListeners: function () {
-        const onAxisMove = (e) => {
-          const a = e.detail.axis;
-          let x = 0, y = 0;
-          if (a.length >= 4) { x = a[2]; y = a[3]; } // Quest Touch thumbstick
-          else if (a.length >= 2) { x = a[0]; y = a[1]; }
+      // Gamepad APIから直接Questコントローラーのスティック値を読む
+      getStickInput: function () {
+        let x = 0;
+        let y = 0;
+        const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+        for (let i = 0; i < gamepads.length; i++) {
+          const gp = gamepads[i];
+          if (!gp || !gp.axes || gp.axes.length === 0) continue;
 
-          if (Math.abs(x) > 0.15 || Math.abs(y) > 0.15) {
-            this.stickX = x;
-            this.stickY = y;
-          } else {
-            this.stickX = 0;
-            this.stickY = 0;
+          // Quest Touch コントローラー: axes[2]がX、axes[3]がY（スティック）
+          let axX = 0, axY = 0;
+          if (gp.axes.length >= 4) {
+            axX = gp.axes[2];
+            axY = gp.axes[3];
+          } else if (gp.axes.length >= 2) {
+            axX = gp.axes[0];
+            axY = gp.axes[1];
           }
-        };
 
-        const left = document.querySelector('#leftHand');
-        const right = document.querySelector('#rightHand');
-        if (left) left.addEventListener('axismove', onAxisMove);
-        if (right) right.addEventListener('axismove', onAxisMove);
+          // デッドゾーン判定
+          if (Math.abs(axX) > 0.15) x = axX;
+          if (Math.abs(axY) > 0.15) y = axY;
+        }
+        return { x: x, y: y };
       },
 
       tick: function (time, timeDelta) {
@@ -233,25 +210,25 @@
         const rigPos = this.rig.object3D.position;
 
         // -------------------------------------------------------------
-        // A. 落下中の物理処理
+        // 1. 落下中の挙動
         // -------------------------------------------------------------
         if (this.isFalling) {
-          this.fallSpeed += 24.0 * dt; // 重力加速
+          this.fallSpeed += 25.0 * dt;
           rigPos.y -= this.fallSpeed * dt;
-          this.rig.object3D.rotation.z += 0.8 * dt; // 視界の傾きスリル
-
-          if (rigPos.y < -100) {
-            this.respawn();
-          }
+          this.rig.object3D.rotation.z += 0.6 * dt;
+          if (rigPos.y < -90) this.respawn();
           return;
         }
 
         // -------------------------------------------------------------
-        // B. 直近0.35秒のヘッドセット上下振幅（足踏み）解析
+        // 2. 頭部上下動（足踏み）の解析
         // -------------------------------------------------------------
-        const headWorldY = this.camera.object3D.position.y;
-        this.yHistory.push({ time: now, y: headWorldY });
+        // カメラのワールドY座標を取得（より正確なトラッキング）
+        const headWorldPos = new THREE.Vector3();
+        this.camera.object3D.getWorldPosition(headWorldPos);
+        const currentY = headWorldPos.y;
 
+        this.yHistory.push({ time: now, y: currentY });
         while (this.yHistory.length > 0 && (now - this.yHistory[0].time) > this.windowMs) {
           this.yHistory.shift();
         }
@@ -262,80 +239,92 @@
           if (val < minY) minY = val;
           if (val > maxY) maxY = val;
         }
-        const amp = (maxY - minY); // 上下の振幅（メートル）
+        const amp = (maxY - minY); // 上下振幅（メートル）
+        const ampMm = (amp * 1000).toFixed(0);
 
-        // HUDゲージ更新（0.0cm 〜 5.0cm）
-        const ampCm = (amp * 100).toFixed(1);
-        const gaugeRatio = Math.min(Math.max((amp - 0.005) / 0.04, 0), 1);
+        // HUDゲージ更新
+        const threshold = this.data.stepThreshold;
+        const ratio = Math.min(Math.max(amp / (threshold * 3.0), 0.05), 1.0);
         if (this.hudGauge) {
-          this.hudGauge.setAttribute('scale', `${Math.max(gaugeRatio, 0.04)} 1 1`);
-          this.hudGauge.setAttribute('material', 'color', amp >= this.minStepThreshold ? '#00ff88' : '#336699');
+          this.hudGauge.setAttribute('scale', `${ratio} 1 1`);
+          this.hudGauge.setAttribute('material', 'color', amp >= threshold ? '#00ff88' : '#336699');
         }
         if (this.hudAmp) {
-          this.hudAmp.setAttribute('value', `上下動: ${ampCm}cm / 閾値: 1.8cm`);
+          this.hudAmp.setAttribute('value', `上下動: ${(amp * 100).toFixed(1)}cm (閾値: ${(threshold * 100).toFixed(1)}cm)`);
         }
 
-        // 足踏み検知判定
-        let stepMoveFactor = 0;
-        if (amp >= this.minStepThreshold) {
-          stepMoveFactor = Math.min(1.0, 0.5 + (amp / 0.045) * 0.5);
-          if (now - this.lastStepTime > 320) { // 1歩の最小間隔
-            this.steps++;
-            this.calories += 0.04;
-            this.lastStepTime = now;
-            this.sound.playStep();
+        // 足踏み検知（6mm以上揺れたら1歩判定＆推進力をインパルス加算）
+        if (amp >= threshold && (now - this.lastStepTime > 280)) {
+          this.steps++;
+          this.calories += 0.04;
+          this.lastStepTime = now;
+          this.sound.playStep();
 
-            if (this.hudSteps) this.hudSteps.setAttribute('value', `STEPS: ${this.steps}`);
-            if (this.hudKcal) this.hudKcal.setAttribute('value', `KCAL: ${this.calories.toFixed(1)}`);
-          }
+          // 一歩踏むごとに前進速度をグッとチャージ
+          this.currentSpeed = Math.min(this.data.maxSpeed, this.currentSpeed + 0.9);
+
+          if (this.hudSteps) this.hudSteps.setAttribute('value', `STEPS: ${this.steps}`);
+          if (this.hudKcal) this.hudKcal.setAttribute('value', `KCAL: ${this.calories.toFixed(1)}`);
         }
 
         // -------------------------------------------------------------
-        // C. 移動入力の統合（足踏み ＋ スティック ＋ キーボード）
+        // 3. スティック ＆ キーボード入力
         // -------------------------------------------------------------
-        let forwardInput = 0; // 正が前進
-        let strafeInput = 0;  // 正が右移動
-
-        // 足踏みによる前進
-        if (stepMoveFactor > 0) {
-          forwardInput += stepMoveFactor * this.data.walkSpeed;
+        const stick = this.getStickInput();
+        if (Math.abs(stick.y) > 0.15) {
+          // スティック前倒し（yはマイナス）で前進
+          this.currentSpeed = -stick.y * this.data.maxSpeed;
+        }
+        if (Math.abs(stick.x) > 0.15) {
+          this.currentStrafe = stick.x * 0.8;
+        } else {
+          this.currentStrafe = 0;
         }
 
-        // コントローラースティック入力（Yは上がマイナス値）
-        if (Math.abs(this.stickY) > 0.15) {
-          forwardInput -= this.stickY * this.data.walkSpeed;
+        // PCキーボード入力（W/S/A/D, Space）
+        if (this.keys['KeyW'] || this.keys['ArrowUp'] || this.keys['Space']) {
+          this.currentSpeed = this.data.maxSpeed;
         }
-        if (Math.abs(this.stickX) > 0.15) {
-          strafeInput += this.stickX * (this.data.walkSpeed * 0.6);
+        if (this.keys['KeyS'] || this.keys['ArrowDown']) {
+          this.currentSpeed = -this.data.maxSpeed * 0.6;
+        }
+        if (this.keys['KeyA'] || this.keys['ArrowLeft']) {
+          this.currentStrafe = -0.8;
+        }
+        if (this.keys['KeyD'] || this.keys['ArrowRight']) {
+          this.currentStrafe = 0.8;
         }
 
-        // PCテスト用キーボード入力（W/S/A/D, 矢印, Space）
-        if (this.keys['KeyW'] || this.keys['ArrowUp'] || this.keys['Space']) forwardInput += this.data.walkSpeed;
-        if (this.keys['KeyS'] || this.keys['ArrowDown']) forwardInput -= this.data.walkSpeed;
-        if (this.keys['KeyA'] || this.keys['ArrowLeft']) strafeInput -= this.data.walkSpeed * 0.6;
-        if (this.keys['KeyD'] || this.keys['ArrowRight']) strafeInput += this.data.walkSpeed * 0.6;
+        // -------------------------------------------------------------
+        // 4. 自然な摩擦減速（慣性）
+        // -------------------------------------------------------------
+        if (amp < threshold && Math.abs(stick.y) <= 0.15 && !this.keys['KeyW'] && !this.keys['Space']) {
+          this.currentSpeed = Math.max(0, this.currentSpeed - 3.0 * dt);
+        }
 
         // -------------------------------------------------------------
-        // D. 頭部の向いている水平方向へカメラリグを前進
+        // 5. 正しい前進ベクトルの適用（※プラス符号で前進！）
         // -------------------------------------------------------------
-        if (forwardInput !== 0 || strafeInput !== 0) {
+        if (Math.abs(this.currentSpeed) > 0.02 || Math.abs(this.currentStrafe) > 0.02) {
           const dir = new THREE.Vector3();
           this.camera.object3D.getWorldDirection(dir);
-          // 水平方向ベクトルを正規化
+
+          // 水平方向ベクトル（Yを0にして正規化）
           const forward = new THREE.Vector3(dir.x, 0, dir.z).normalize();
           const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
 
-          // 前進（getWorldDirectionは後方を向くため負符号）
-          rigPos.addScaledVector(forward, -forwardInput * dt);
-          rigPos.addScaledVector(right, -strafeInput * dt);
+          // 前進は「正（+）」で加算！
+          rigPos.addScaledVector(forward, this.currentSpeed * dt);
+          rigPos.addScaledVector(right, this.currentStrafe * dt);
         }
 
         // -------------------------------------------------------------
-        // E. 距離計測・ゴール・落下判定
+        // 6. 進捗・落下判定
         // -------------------------------------------------------------
         const currentZ = rigPos.z;
         const currentX = rigPos.x;
-        const progress = Math.max(0, Math.min(this.data.beamLength, -currentZ));
+        // スタート地点(Z: 1.2)から奥(Z: -40)に向かう進行距離
+        const progress = Math.max(0, Math.min(this.data.beamLength, 0.0 - currentZ));
 
         if (this.hudDist) {
           this.hudDist.setAttribute('value', `${progress.toFixed(1)}m / ${this.data.beamLength.toFixed(1)}m`);
@@ -346,14 +335,14 @@
           this.goalReached = true;
           this.sound.playGoal();
           if (this.hudStatus) {
-            this.hudStatus.setAttribute('value', '★ GOAL REACHED! ★');
+            this.hudStatus.setAttribute('value', '★ GOAL REACHED! 完走！ ★');
             this.hudStatus.setAttribute('color', '#ffff00');
           }
           return;
         }
 
-        // 鉄骨からの落下判定（スタート台を出た後の区間）
-        if (currentZ < -1.0 && currentZ > -this.data.beamLength) {
+        // 鉄骨からの落下判定（スタート台を出た後）
+        if (currentZ < -0.5 && currentZ > -this.data.beamLength) {
           if (Math.abs(currentX) > this.data.fallMargin) {
             this.triggerFall();
           }
@@ -373,6 +362,7 @@
       respawn: function () {
         this.isFalling = false;
         this.fallSpeed = 0;
+        this.currentSpeed = 0;
         this.rig.object3D.position.set(0, 0, 1.2);
         this.rig.object3D.rotation.set(0, 0, 0);
         if (this.hudStatus) {
@@ -382,20 +372,15 @@
       }
     });
 
-    // =========================================================================
-    // 地上300mの摩天楼ビル群を生成するプロシージャルコンポーネント
-    // =========================================================================
+    // 摩天楼背景
     AFRAME.registerComponent('skyscraper-city', {
       init: function () {
         const scene = this.el;
-        const count = 75;
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < 75; i++) {
           const b = document.createElement('a-box');
           const height = 40 + Math.random() * 160;
           const x = (Math.random() - 0.5) * 360;
           const z = -Math.random() * 120 + 20;
-
-          // 鉄骨の真下（幅10m以内）には高層ビルを置かず、谷底を見せる
           if (Math.abs(x) < 8) continue;
 
           b.setAttribute('width', 15 + Math.random() * 25);
@@ -414,11 +399,10 @@
 </head>
 
 <body>
-  <!-- 2Dブラウザ時の案内バナー（VRモードに入ると自動非表示） -->
   <div id="vr-guide">
     <h2>🥽 Meta Quest ブラウザでの開始手順</h2>
-    <p>画面右下にある<span class="highlight">「VR」アイコン（ゴーグルマーク）</span>をコントローラーのトリガーでクリックしてください。</p>
-    <p>没入モード突入後、現実で<span class="highlight">「その場足踏み」</span>をするか、<span class="highlight">「アナログスティック前倒し」</span>で鉄骨を渡れます！</p>
+    <p>右下の<span class="em">「VR」アイコン</span>をクリックして没入モードに入ってください。</p>
+    <p>その場で<span class="em">「トントンと足踏み」</span>するか、コントローラーの<span class="em">スティック前倒し</span>で前進します。</p>
   </div>
 
   <a-scene
@@ -427,68 +411,51 @@
     vr-mode-ui="enabled: true;"
     background="color: #030814">
 
-    <!-- ライティング -->
+    <!-- ライト -->
     <a-entity light="type: ambient; color: #4a6890; intensity: 0.9;"></a-entity>
     <a-entity light="type: directional; color: #aadcff; intensity: 1.2;" position="15 30 10"></a-entity>
 
-    <!-- ================================================================= -->
-    <!-- プレイヤー（Camera Rig方式：WebXR座標上書き問題を完全解決） -->
-    <!-- ================================================================= -->
+    <!-- プレイヤー（Camera Rig） -->
     <a-entity id="rig" position="0 0 1.2" girder-locomotion>
       <a-camera id="head" position="0 1.6 0" look-controls="pointerLockEnabled: false">
         
-        <!-- 視界追従型 フィットネスHUD（下部視界に常駐） -->
+        <!-- フィットネスHUD -->
         <a-entity id="hud" position="0 -0.32 -0.8" rotation="-18 0 0">
-          <!-- 背景パネル -->
-          <a-plane width="0.86" height="0.36" material="color: #060d1a; opacity: 0.88; transparent: true;"></a-plane>
+          <a-plane width="0.86" height="0.36" material="color: #060d1a; opacity: 0.9; transparent: true;"></a-plane>
 
-          <!-- 距離・歩数・カロリー表示 -->
           <a-text id="hud-distance" value="0.0m / 40.0m" position="-0.38 0.11 0.01" scale="0.28 0.28 0.28" color="#00ffff" font="roboto"></a-text>
           <a-text id="hud-steps" value="STEPS: 0" position="0.04 0.11 0.01" scale="0.25 0.25 0.25" color="#00ff88" font="roboto"></a-text>
           <a-text id="hud-kcal" value="KCAL: 0.0" position="0.24 0.11 0.01" scale="0.25 0.25 0.25" color="#ffaa00" font="roboto"></a-text>
 
-          <!-- 上下動リアルタイム検知バー（足踏みすると緑色に伸びる） -->
+          <!-- 上下動リアルタイムメーター（6mm以上で緑に反応） -->
           <a-plane position="0 0.02 0.005" width="0.74" height="0.03" color="#162238"></a-plane>
           <a-plane id="hud-gauge" position="-0.37 0.02 0.01" width="0.74" height="0.026" color="#00ff88" scale="0.05 1 1"></a-plane>
 
-          <!-- リアルタイム上下動数値 -->
-          <a-text id="hud-amp" value="上下動: 0.0cm / 閾値: 1.8cm" position="-0.38 -0.035 0.01" scale="0.21 0.21 0.21" color="#88bbee" font="roboto"></a-text>
-          
-          <!-- 操作ステータス -->
+          <a-text id="hud-amp" value="上下動: 0.0cm (閾値: 0.6cm)" position="-0.38 -0.035 0.01" scale="0.21 0.21 0.21" color="#88bbee" font="roboto"></a-text>
           <a-text id="hud-status" value="足踏み または スティックで前進" align="center" position="0 -0.11 0.01" scale="0.24 0.24 0.24" color="#00f0ff" font="roboto"></a-text>
         </a-entity>
 
       </a-camera>
 
-      <!-- Quest Touch コントローラー（左右スティック入力検知） -->
       <a-entity id="leftHand" oculus-touch-controls="hand: left"></a-entity>
       <a-entity id="rightHand" oculus-touch-controls="hand: right"></a-entity>
     </a-entity>
 
-    <!-- ================================================================= -->
-    <!-- ステージ構成：スタート台、細い鉄骨（幅50cm×長さ40m）、ゴール台 -->
-    <!-- ================================================================= -->
-    <!-- スタート地点の安全足場 -->
+    <!-- スタート足場 -->
     <a-box position="0 -0.1 1.8" width="2.6" depth="2.6" height="0.2" material="color: #223046; metalness: 0.6; roughness: 0.4"></a-box>
     <a-box position="0 -0.05 0.55" width="0.8" depth="0.2" height="0.1" material="color: #eedd00"></a-box>
 
-    <!-- メインの鉄骨（幅50cm、長さ40m、Z: 0 から -40m） -->
+    <!-- 鉄骨（幅50cm、長さ40m、Z: 0 から -40m） -->
     <a-box position="0 -0.15 -20" width="0.5" depth="40" height="0.3" material="color: #3b4d66; metalness: 0.7; roughness: 0.3"></a-box>
-    <!-- 鉄骨のセンターラインガイド -->
     <a-plane position="0 -0.001 -20" rotation="-90 0 0" width="0.04" height="40" material="color: #55aaff; opacity: 0.6; transparent: true"></a-plane>
 
-    <!-- ゴール地点の足場 -->
+    <!-- ゴール足場 -->
     <a-box position="0 -0.1 -41.5" width="3.2" depth="3.2" height="0.2" material="color: #1a4433; metalness: 0.6; roughness: 0.4"></a-box>
     <a-cylinder position="0 0.5 -41.5" radius="0.8" height="1.0" material="color: #00ffaa; opacity: 0.35; transparent: true"></a-cylinder>
 
-    <!-- ================================================================= -->
-    <!-- 地上300mの遥かなる下界界隈（高所恐怖スリル演出） -->
-    <!-- ================================================================= -->
-    <!-- はるか底の地面（道路グリッド） -->
+    <!-- 下界（地上300m） -->
     <a-plane position="0 -280 0" rotation="-90 0 0" width="1200" height="1200" material="color: #03060f; metalness: 0.1; roughness: 0.9"></a-plane>
     <a-grid position="0 -279.5 0" width="1200" height="1200" divisions="60" material="color: #0c182d"></a-grid>
-
-    <!-- 中空を漂う雲・霧のレイヤー（高度感の強調） -->
     <a-plane position="0 -110 -20" rotation="-90 0 0" width="300" height="300" material="color: #6080aa; opacity: 0.12; transparent: true"></a-plane>
   </a-scene>
 </body>
